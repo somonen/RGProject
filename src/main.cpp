@@ -51,35 +51,26 @@ struct PointLight {
     float quadratic;
 };
 
+struct DirLight {
+    glm::vec3 direction;
+
+    glm::vec3 specular;
+    glm::vec3 diffuse;
+    glm::vec3 ambient;
+};
+
 struct ProgramState {
-    glm::vec3 clearColor = glm::vec3(0);
+    glm::vec3 clearColor = glm::vec3(1);
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
-    glm::vec3 backpackPosition = glm::vec3(0.0f);
-    float backpackScale = 1.0f;
+    glm::vec3 forestPosition = glm::vec3(0.0f, -5.0f, 10.0f);
+    float forestScale = 1.0f;
     PointLight pointLight;
-    ProgramState()
-            : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
-
-    void SaveToFile(std::string filename);
+    DirLight dirLight;
 
     void LoadFromFile(std::string filename);
 };
-
-void ProgramState::SaveToFile(std::string filename) {
-    std::ofstream out(filename);
-    out << clearColor.r << '\n'
-        << clearColor.g << '\n'
-        << clearColor.b << '\n'
-        << ImGuiEnabled << '\n'
-        << camera.Position.x << '\n'
-        << camera.Position.y << '\n'
-        << camera.Position.z << '\n'
-        << camera.Front.x << '\n'
-        << camera.Front.y << '\n'
-        << camera.Front.z << '\n';
-}
 
 void ProgramState::LoadFromFile(std::string filename) {
     std::ifstream in(filename);
@@ -97,13 +88,55 @@ void ProgramState::LoadFromFile(std::string filename) {
     }
 }
 
+void loadPointLight(std::string filename, PointLight& light){
+    std::ifstream in(filename);
+    if (in){
+        float x, y, z;
+        std::string trash;
+        in >> x >> y >> z >> trash;
+        light.position = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.ambient = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >>trash;
+        light.diffuse = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.specular = glm::vec3(x, y, z);
+
+        in
+                >> light.constant >> trash
+                >> light.linear >> trash
+                >> light.quadratic >> trash;
+    }
+}
+
+void loadDirLight(std::string filename, DirLight& light){
+    std::ifstream in(filename);
+    if (in){
+        float x, y, z;
+        std::string trash;
+        in >> x >> y >> z >> trash;
+        light.direction = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.ambient = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.diffuse = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.specular = glm::vec3(x, y, z);
+    }
+}
+
 ProgramState *programState;
 
 void DrawImGui(ProgramState *programState);
 
 int main() {
     // glfw: initialize and configure
-    // ------------------------------
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -114,7 +147,6 @@ int main() {
 #endif
 
     // glfw window creation
-    // --------------------
     GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
     if (window == NULL) {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -130,55 +162,44 @@ int main() {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     // glad: load all OpenGL function pointers
-    // ---------------------------------------
     if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
-
-    // tell stb_image.h to flip loaded texture's on the y-axis (before loading model).
-    stbi_set_flip_vertically_on_load(true);
 
     programState = new ProgramState;
     programState->LoadFromFile("resources/program_state.txt");
     if (programState->ImGuiEnabled) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
+
     // Init Imgui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
     (void) io;
 
-
-
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
     // configure global opengl state
-    // -----------------------------
     glEnable(GL_DEPTH_TEST);
 
     // build and compile shaders
-    // -------------------------
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
 
     // load models
     // -----------
-    Model ourModel("resources/objects/backpack/backpack.obj");
-    ourModel.SetShaderTextureNamePrefix("material.");
+    Model forestModel("resources/objects/forest/forest.obj");
+    forestModel.SetShaderTextureNamePrefix("material.");
 
+    // pointLight
     PointLight& pointLight = programState->pointLight;
-    pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
-    pointLight.ambient = glm::vec3(0.1, 0.1, 0.1);
-    pointLight.diffuse = glm::vec3(0.6, 0.6, 0.6);
-    pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
+    loadPointLight("resources/pointLight.txt", pointLight);
 
-    pointLight.constant = 1.0f;
-    pointLight.linear = 0.09f;
-    pointLight.quadratic = 0.032f;
-
-
+    // dirLight
+    DirLight& dirLight = programState->dirLight;
+    loadDirLight("resources/dirLight.txt", dirLight);
 
     // draw in wireframe
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -196,7 +217,6 @@ int main() {
         // -----
         processInput(window);
 
-
         // render
         // ------
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
@@ -204,16 +224,29 @@ int main() {
 
         // don't forget to enable shader before setting uniforms
         ourShader.use();
-        pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
-        ourShader.setVec3("pointLight.position", pointLight.position);
-        ourShader.setVec3("pointLight.ambient", pointLight.ambient);
-        ourShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-        ourShader.setVec3("pointLight.specular", pointLight.specular);
-        ourShader.setFloat("pointLight.constant", pointLight.constant);
-        ourShader.setFloat("pointLight.linear", pointLight.linear);
-        ourShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-        ourShader.setVec3("viewPosition", programState->camera.Position);
-        ourShader.setFloat("material.shininess", 32.0f);
+
+        // loading dirLight into shader
+        {
+            ourShader.setVec3("dirLight.direction", dirLight.direction);
+            ourShader.setVec3("dirLight.ambient", dirLight.ambient);
+            ourShader.setVec3("dirLight.diffuse", dirLight.diffuse);
+            ourShader.setVec3("dirLight.specular", dirLight.specular);
+        }
+
+        // loading pointLight into shader
+        {
+            pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
+            ourShader.setVec3("pointLight.position", pointLight.position);
+            ourShader.setVec3("pointLight.ambient", pointLight.ambient);
+            ourShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+            ourShader.setVec3("pointLight.specular", pointLight.specular);
+            ourShader.setFloat("pointLight.constant", pointLight.constant);
+            ourShader.setFloat("pointLight.linear", pointLight.linear);
+            ourShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+            ourShader.setVec3("viewPosition", programState->camera.Position);
+            ourShader.setFloat("material.shininess", 32.0f);
+        }
+
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
@@ -223,31 +256,30 @@ int main() {
 
         // render the loaded model
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model,
-                               programState->backpackPosition); // translate it down so it's at the center of the scene
-        model = glm::scale(model, glm::vec3(programState->backpackScale));    // it's a bit too big for our scene, so scale it down
+        model = glm::translate(model,programState->forestPosition); // translate it down so it's at the center of the scene
+        model = glm::scale(model, glm::vec3(programState->forestScale));    // it's a bit too big for our scene, so scale it down
         ourShader.setMat4("model", model);
-        ourModel.Draw(ourShader);
+        forestModel.Draw(ourShader);
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
 
-
-
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
-        // -------------------------------------------------------------------------------
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    programState->SaveToFile("resources/program_state.txt");
-    delete programState;
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-    // glfw: terminate, clearing all previously allocated GLFW resources.
-    // ------------------------------------------------------------------
-    glfwTerminate();
+    // termination
+    {
+        delete programState;
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+        // glfw: terminate, clearing all previously allocated GLFW resources.
+        // ------------------------------------------------------------------
+        glfwTerminate();
+    }
+
     return 0;
 }
 
@@ -257,6 +289,8 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
+    deltaTime *= 2;
+
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(FORWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -265,6 +299,18 @@ void processInput(GLFWwindow *window) {
         programState->camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+    if(glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS && programState->CameraMouseMovementUpdateEnabled)
+        programState->camera.ProcessMouseMovement(3.0f, 0);
+    if(glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS && programState->CameraMouseMovementUpdateEnabled)
+        programState->camera.ProcessMouseMovement(-3.0f, 0);
+    if(glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS && programState->CameraMouseMovementUpdateEnabled)
+        programState->camera.ProcessMouseMovement(0, 3.0f);
+    if(glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS && programState->CameraMouseMovementUpdateEnabled)
+        programState->camera.ProcessMouseMovement(0, -3.0f);
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        programState->camera.ProcessKeyboard(UP, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+        programState->camera.ProcessKeyboard(DOWN, deltaTime);
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
@@ -309,11 +355,11 @@ void DrawImGui(ProgramState *programState) {
     {
         static float f = 0.0f;
         ImGui::Begin("Hello window");
-        ImGui::Text("Hello text");
+        //ImGui::Text("Hello text");
         ImGui::SliderFloat("Float slider", &f, 0.0, 1.0);
         ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
-        ImGui::DragFloat3("Backpack position", (float*)&programState->backpackPosition);
-        ImGui::DragFloat("Backpack scale", &programState->backpackScale, 0.05, 0.1, 4.0);
+        ImGui::DragFloat3("Forest position", (float*)&programState->forestPosition);
+        ImGui::DragFloat("Forest scale", &programState->forestScale, 0.05, 0.1, 4.0);
 
         ImGui::DragFloat("pointLight.constant", &programState->pointLight.constant, 0.05, 0.0, 1.0);
         ImGui::DragFloat("pointLight.linear", &programState->pointLight.linear, 0.05, 0.0, 1.0);
