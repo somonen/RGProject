@@ -26,9 +26,57 @@ void processInput(GLFWwindow *window);
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 
+unsigned int loadCubemap(vector<std::string>& faces);
+
+float skyboxVertices[] = {
+        // positions
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        -1.0f,  1.0f, -1.0f,
+        1.0f,  1.0f, -1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+        1.0f, -1.0f,  1.0f
+};
+
+
 // settings
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 1200;
+const unsigned int SCR_HEIGHT = 750;
 
 // camera
 
@@ -148,23 +196,25 @@ int main() {
 
     // glfw window creation
     GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
-    if (window == NULL) {
-        std::cout << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return -1;
-    }
-    glfwMakeContextCurrent(window);
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-    glfwSetCursorPosCallback(window, mouse_callback);
-    glfwSetScrollCallback(window, scroll_callback);
-    glfwSetKeyCallback(window, key_callback);
-    // tell GLFW to capture our mouse
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    {
+        if (window == NULL) {
+            std::cout << "Failed to create GLFW window" << std::endl;
+            glfwTerminate();
+            return -1;
+        }
+        glfwMakeContextCurrent(window);
+        glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+        glfwSetCursorPosCallback(window, mouse_callback);
+        glfwSetScrollCallback(window, scroll_callback);
+        glfwSetKeyCallback(window, key_callback);
+        // tell GLFW to capture our mouse
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    // glad: load all OpenGL function pointers
-    if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
-        std::cout << "Failed to initialize GLAD" << std::endl;
-        return -1;
+        // glad: load all OpenGL function pointers
+        if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
+            std::cout << "Failed to initialize GLAD" << std::endl;
+            return -1;
+        }
     }
 
     programState = new ProgramState;
@@ -174,22 +224,56 @@ int main() {
     }
 
     // Init Imgui
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
-    (void) io;
-
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 330 core");
+    {
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO &io = ImGui::GetIO();
+        (void) io;
+        ImGui_ImplGlfw_InitForOpenGL(window, true);
+        ImGui_ImplOpenGL3_Init("#version 330 core");
+    }
 
     // configure global opengl state
-    glEnable(GL_DEPTH_TEST);
+    {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+    }
 
     // build and compile shaders
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
+    Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+
+    // skybox vertex initialization
+
+    unsigned int skyboxVAO, skyboxVBO;
+    {
+        glGenVertexArrays(1, &skyboxVAO);
+        glGenBuffers(1, &skyboxVBO);
+        glBindVertexArray(skyboxVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *) nullptr);
+        glEnableVertexAttribArray(0);
+    }
+
+    // creating and loading skybox
+    unsigned int cubemapTexture;
+    {
+        vector<std::string> faces
+                {
+                        "resources/textures/skybox/skybox_px.jpg",
+                        "resources/textures/skybox/skybox_nx.jpg",
+                        "resources/textures/skybox/skybox_py.jpg",
+                        "resources/textures/skybox/skybox_ny.jpg",
+                        "resources/textures/skybox/skybox_pz.jpg",
+                        "resources/textures/skybox/skybox_nz.jpg"
+                };
+        cubemapTexture = loadCubemap(faces);
+    }
 
     // load models
-    // -----------
     Model forestModel("resources/objects/forest/forest.obj");
     forestModel.SetShaderTextureNamePrefix("material.");
 
@@ -204,29 +288,37 @@ int main() {
     // draw in wireframe
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
+    skyboxShader.use();
+    skyboxShader.setInt("skybox", 0);
+
+    ourShader.use();
+    ourShader.setInt("material.texture_diffuse1", 0);
+    ourShader.setInt("material.texture_specular1", 1);
+
     // render loop
-    // -----------
     while (!glfwWindowShouldClose(window)) {
+
         // per-frame time logic
-        // --------------------
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
         // input
-        // -----
         processInput(window);
 
         // render
-        // ------
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // don't forget to enable shader before setting uniforms
-        ourShader.use();
+        // view/projection transformations
+        glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
+                                                (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+        glm::mat4 view = programState->camera.GetViewMatrix();
 
         // loading dirLight into shader
         {
+            ourShader.use();
             ourShader.setVec3("dirLight.direction", dirLight.direction);
             ourShader.setVec3("dirLight.ambient", dirLight.ambient);
             ourShader.setVec3("dirLight.diffuse", dirLight.diffuse);
@@ -234,8 +326,8 @@ int main() {
         }
 
         // loading pointLight into shader
+        pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
         {
-            pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
             ourShader.setVec3("pointLight.position", pointLight.position);
             ourShader.setVec3("pointLight.ambient", pointLight.ambient);
             ourShader.setVec3("pointLight.diffuse", pointLight.diffuse);
@@ -247,10 +339,6 @@ int main() {
             ourShader.setFloat("material.shininess", 32.0f);
         }
 
-        // view/projection transformations
-        glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
-                                                (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        glm::mat4 view = programState->camera.GetViewMatrix();
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
@@ -259,7 +347,26 @@ int main() {
         model = glm::translate(model,programState->forestPosition); // translate it down so it's at the center of the scene
         model = glm::scale(model, glm::vec3(programState->forestScale));    // it's a bit too big for our scene, so scale it down
         ourShader.setMat4("model", model);
+
+        glDisable(GL_CULL_FACE);
         forestModel.Draw(ourShader);
+        glEnable(GL_CULL_FACE);
+
+        // drawing skybox
+        glDepthMask(GL_FALSE);
+        glDepthFunc(GL_LEQUAL);
+        {
+            skyboxShader.use();
+            skyboxShader.setMat4("projection", projection);
+            skyboxShader.setMat4("view", glm::mat4(glm::mat3(view)));
+            glBindVertexArray(skyboxVAO);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+        glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS);
+
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -278,6 +385,8 @@ int main() {
         // glfw: terminate, clearing all previously allocated GLFW resources.
         // ------------------------------------------------------------------
         glfwTerminate();
+        glDeleteVertexArrays(1, &skyboxVAO);
+        glDeleteBuffers(1, &skyboxVBO);
     }
 
     return 0;
@@ -391,4 +500,34 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         }
     }
+}
+
+unsigned int loadCubemap(vector<std::string>& faces){
+
+    unsigned int skyboxID;
+    glGenTextures(1, &skyboxID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxID);
+
+    int width, height, nrChannels;
+    unsigned char *data;
+    for(unsigned int i = 0; i < faces.size(); i++) {
+
+        data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+        if(data) {
+            glTexImage2D(
+                    GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                    0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        }else{
+            std::cerr << "Failed to load cubemap face at path: " << faces[i] << '\n';
+        }
+        stbi_image_free(data);
+    }
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return skyboxID;
 }
