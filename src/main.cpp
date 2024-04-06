@@ -16,18 +16,6 @@
 
 #include <iostream>
 
-void framebuffer_size_callback(GLFWwindow *window, int width, int height);
-
-void mouse_callback(GLFWwindow *window, double xpos, double ypos);
-
-void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
-
-void processInput(GLFWwindow *window);
-
-void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
-
-unsigned int loadCubemap(vector<std::string>& faces);
-
 float skyboxVertices[] = {
         // positions
         -1.0f,  1.0f, -1.0f,
@@ -73,6 +61,17 @@ float skyboxVertices[] = {
         1.0f, -1.0f,  1.0f
 };
 
+void framebuffer_size_callback(GLFWwindow *window, int width, int height);
+
+void mouse_callback(GLFWwindow *window, double xpos, double ypos);
+
+void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
+
+void processInput(GLFWwindow *window);
+
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
+
+unsigned int loadCubemap(vector<std::string>& faces);
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
@@ -292,8 +291,7 @@ int main() {
     skyboxShader.setInt("skybox", 0);
 
     ourShader.use();
-    ourShader.setInt("material.texture_diffuse1", 0);
-    ourShader.setInt("material.texture_specular1", 1);
+    ourShader.setFloat("material.shininess", 32.0f);
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -336,7 +334,6 @@ int main() {
             ourShader.setFloat("pointLight.linear", pointLight.linear);
             ourShader.setFloat("pointLight.quadratic", pointLight.quadratic);
             ourShader.setVec3("viewPosition", programState->camera.Position);
-            ourShader.setFloat("material.shininess", 32.0f);
         }
 
         ourShader.setMat4("projection", projection);
@@ -382,18 +379,16 @@ int main() {
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
         ImGui::DestroyContext();
-        // glfw: terminate, clearing all previously allocated GLFW resources.
-        // ------------------------------------------------------------------
-        glfwTerminate();
         glDeleteVertexArrays(1, &skyboxVAO);
         glDeleteBuffers(1, &skyboxVBO);
+        // glfw: terminate, clearing all previously allocated GLFW resources.
+        glfwTerminate();
     }
 
     return 0;
 }
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
-// ---------------------------------------------------------------------------------------------------------
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
@@ -423,7 +418,6 @@ void processInput(GLFWwindow *window) {
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
-// ---------------------------------------------------------------------------------------------
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
     // make sure the viewport matches the new window dimensions; note that width and
     // height will be significantly larger than specified on retina displays.
@@ -431,7 +425,6 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
 }
 
 // glfw: whenever the mouse moves, this callback is called
-// -------------------------------------------------------
 void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
     if (firstMouse) {
         lastX = xpos;
@@ -450,7 +443,6 @@ void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
 }
 
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called
-// ----------------------------------------------------------------------
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
     programState->camera.ProcessMouseScroll(yoffset);
 }
@@ -459,7 +451,6 @@ void DrawImGui(ProgramState *programState) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-
 
     {
         static float f = 0.0f;
@@ -483,6 +474,14 @@ void DrawImGui(ProgramState *programState) {
         ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
         ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
         ImGui::Checkbox("Camera mouse update", &programState->CameraMouseMovementUpdateEnabled);
+        ImGui::End();
+    }
+    {
+        ImGui::Begin("Dirlight info");
+        ImGui::DragFloat3("Direction", (float*)&programState->dirLight.direction, 0.05, -10, 10);
+        ImGui::DragFloat3("Ambient", (float*)&programState->dirLight.ambient, 0.05, 0 ,1);
+        ImGui::DragFloat3("Diffuse", (float*)&programState->dirLight.diffuse, 0.05, 0 ,1);
+        ImGui::DragFloat3("Specular", (float*)&programState->dirLight.specular, 0.05, 0 ,1);
         ImGui::End();
     }
 
