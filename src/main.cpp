@@ -16,50 +16,8 @@
 
 #include <iostream>
 
-float skyboxVertices[] = {
-        // positions
-        -1.0f,  1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f,
-        1.0f, -1.0f, -1.0f,
-        1.0f, -1.0f, -1.0f,
-        1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-        1.0f, -1.0f, -1.0f,
-        1.0f, -1.0f,  1.0f,
-        1.0f,  1.0f,  1.0f,
-        1.0f,  1.0f,  1.0f,
-        1.0f,  1.0f, -1.0f,
-        1.0f, -1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-        1.0f,  1.0f,  1.0f,
-        1.0f,  1.0f,  1.0f,
-        1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-        -1.0f,  1.0f, -1.0f,
-        1.0f,  1.0f, -1.0f,
-        1.0f,  1.0f,  1.0f,
-        1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-        1.0f, -1.0f, -1.0f,
-        1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-        1.0f, -1.0f,  1.0f
-};
+float skyboxVertices[108];
+float catTrumpetVertices[108];
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 
@@ -72,6 +30,8 @@ void processInput(GLFWwindow *window);
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 
 unsigned int loadCubemap(vector<std::string>& faces);
+
+void loadSkyboxVertices(std::string filename, float* vertices);
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
@@ -183,6 +143,9 @@ ProgramState *programState;
 void DrawImGui(ProgramState *programState);
 
 int main() {
+
+
+
     // glfw: initialize and configure
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -234,18 +197,21 @@ int main() {
 
     // configure global opengl state
     {
+        glEnable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
     }
 
+    loadSkyboxVertices("resources/skybox_vertices.txt", skyboxVertices);
+    loadSkyboxVertices("resources/cat_trumpet_vertices.txt", catTrumpetVertices);
+
     // build and compile shaders
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
 
     // skybox vertex initialization
-
     unsigned int skyboxVAO, skyboxVBO;
     {
         glGenVertexArrays(1, &skyboxVAO);
@@ -284,14 +250,11 @@ int main() {
     DirLight& dirLight = programState->dirLight;
     loadDirLight("resources/dirLight.txt", dirLight);
 
-    // draw in wireframe
-    //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
     skyboxShader.use();
     skyboxShader.setInt("skybox", 0);
 
     ourShader.use();
-    ourShader.setFloat("material.shininess", 32.0f);
+    ourShader.setFloat("material.shininess", 128.0f);
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -364,7 +327,6 @@ int main() {
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS);
 
-
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
 
@@ -384,7 +346,6 @@ int main() {
         // glfw: terminate, clearing all previously allocated GLFW resources.
         glfwTerminate();
     }
-
     return 0;
 }
 
@@ -529,4 +490,12 @@ unsigned int loadCubemap(vector<std::string>& faces){
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     return skyboxID;
+}
+
+void loadSkyboxVertices(std::string filename, float* vertices){
+    std::ifstream in(filename);
+    char c;
+    for (int i = 0; in; i++) {
+        in >> vertices[i] >> c;
+    }
 }
