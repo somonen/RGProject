@@ -7,7 +7,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
+//#include <glm/gtc/type_ptr.hpp>
 
 #include <learnopengl/filesystem.h>
 #include <learnopengl/shader.h>
@@ -16,8 +16,10 @@
 
 #include <iostream>
 
-float skyboxVertices[108];
-float catTrumpetVertices[108];
+#define N_SKYBOX_VERTICES (108)
+
+float skyboxVertices[N_SKYBOX_VERTICES];
+float catTrumpetVertices[N_SKYBOX_VERTICES];
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 
@@ -29,9 +31,11 @@ void processInput(GLFWwindow *window);
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 
-unsigned int loadCubemap(vector<std::string>& faces);
+unsigned int loadRGBCubemap(vector<std::string>& faces);
 
-void loadSkyboxVertices(std::string filename, float* vertices);
+unsigned int loadRGBACubemap(vector<std::string>& faces);
+
+void loadSkyboxVertices(std::string filename, float* vertices, int n);
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
@@ -140,11 +144,9 @@ void loadDirLight(std::string filename, DirLight& light){
 
 ProgramState *programState;
 
-void DrawImGui(ProgramState *programState);
+void DrawImGui(ProgramState *pSta);
 
 int main() {
-
-
 
     // glfw: initialize and configure
     glfwInit();
@@ -202,14 +204,33 @@ int main() {
         glDepthFunc(GL_LESS);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
-    loadSkyboxVertices("resources/skybox_vertices.txt", skyboxVertices);
-    loadSkyboxVertices("resources/cat_trumpet_vertices.txt", catTrumpetVertices);
+    loadSkyboxVertices("resources/vertices/skybox_vertices.txt", skyboxVertices, N_SKYBOX_VERTICES);
+    loadSkyboxVertices("resources/vertices/cat_trumpet_vertices.txt", catTrumpetVertices, N_SKYBOX_VERTICES);
+
+/*
+    FILE* f = fopen("resources/vertices/cat_trumpet_vertices.txt", "w");
+    for(int i=0; i < N_SKYBOX_VERTICES; i++){
+        if(skyboxVertices[i] > 0){
+            fprintf(f, "%.1f ", skyboxVertices[i] - 0.2f);
+        }else{
+            fprintf(f, "%.1f ", skyboxVertices[i] + 0.2f);
+        }
+        if((i+1) % 3 == 0 && i != N_SKYBOX_VERTICES-1){
+            fprintf(f, "\n");
+        }
+        if((i+1) % 18 == 0 && i != N_SKYBOX_VERTICES-1){
+            fprintf(f, "\n");
+        }
+    }
+*/
 
     // build and compile shaders
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+    Shader catSkyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
 
     // skybox vertex initialization
     unsigned int skyboxVAO, skyboxVBO;
@@ -224,7 +245,7 @@ int main() {
     }
 
     // creating and loading skybox
-    unsigned int cubemapTexture;
+    unsigned int skyboxTexture;
     {
         vector<std::string> faces
                 {
@@ -235,7 +256,32 @@ int main() {
                         "resources/textures/skybox/skybox_pz.jpg",
                         "resources/textures/skybox/skybox_nz.jpg"
                 };
-        cubemapTexture = loadCubemap(faces);
+        skyboxTexture = loadRGBCubemap(faces);
+    }
+
+    unsigned int catTrumpetVAO, catTrumpetVBO;
+    {
+        glGenVertexArrays(1, &catTrumpetVAO);
+        glGenBuffers(1, &catTrumpetVBO);
+        glBindVertexArray(catTrumpetVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, catTrumpetVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(catTrumpetVertices), &catTrumpetVertices, GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *) nullptr);
+        glEnableVertexAttribArray(0);
+    }
+
+    unsigned int catTrumpetTexture;
+    {
+        vector<std::string> faces
+                {
+                        "resources/textures/cat.png",
+                        "resources/textures/cat.png",
+                        "resources/textures/cat.png",
+                        "resources/textures/cat.png",
+                        "resources/textures/cat.png",
+                        "resources/textures/cat.png",
+                };
+        catTrumpetTexture = loadRGBACubemap(faces);
     }
 
     // load models
@@ -244,13 +290,16 @@ int main() {
 
     // pointLight
     PointLight& pointLight = programState->pointLight;
-    loadPointLight("resources/pointLight.txt", pointLight);
+    loadPointLight("resources/lightSources/pointLight.txt", pointLight);
 
     // dirLight
     DirLight& dirLight = programState->dirLight;
-    loadDirLight("resources/dirLight.txt", dirLight);
+    loadDirLight("resources/lightSources/dirLight.txt", dirLight);
 
     skyboxShader.use();
+    skyboxShader.setInt("skybox", 0);
+
+    catSkyboxShader.use();
     skyboxShader.setInt("skybox", 0);
 
     ourShader.use();
@@ -277,9 +326,12 @@ int main() {
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = programState->camera.GetViewMatrix();
 
+        ourShader.use();
+        ourShader.setMat4("projection", projection);
+        ourShader.setMat4("view", view);
+
         // loading dirLight into shader
         {
-            ourShader.use();
             ourShader.setVec3("dirLight.direction", dirLight.direction);
             ourShader.setVec3("dirLight.ambient", dirLight.ambient);
             ourShader.setVec3("dirLight.diffuse", dirLight.diffuse);
@@ -287,7 +339,8 @@ int main() {
         }
 
         // loading pointLight into shader
-        pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
+        //pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
+        pointLight.position = glm::vec3(0.0f);
         {
             ourShader.setVec3("pointLight.position", pointLight.position);
             ourShader.setVec3("pointLight.ambient", pointLight.ambient);
@@ -298,9 +351,6 @@ int main() {
             ourShader.setFloat("pointLight.quadratic", pointLight.quadratic);
             ourShader.setVec3("viewPosition", programState->camera.Position);
         }
-
-        ourShader.setMat4("projection", projection);
-        ourShader.setMat4("view", view);
 
         // render the loaded model
         glm::mat4 model = glm::mat4(1.0f);
@@ -321,9 +371,20 @@ int main() {
             skyboxShader.setMat4("view", glm::mat4(glm::mat3(view)));
             glBindVertexArray(skyboxVAO);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTexture);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
+
+        {
+            catSkyboxShader.use();
+            catSkyboxShader.setMat4("projection", projection);
+            catSkyboxShader.setMat4("view", glm::mat4(glm::mat3(view)));
+            glBindVertexArray(catTrumpetVAO);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, catTrumpetTexture);
+            glDrawArrays(GL_TRIANGLES, 30, 6);
+        }
+
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS);
 
@@ -408,7 +469,7 @@ void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
     programState->camera.ProcessMouseScroll(yoffset);
 }
 
-void DrawImGui(ProgramState *programState) {
+void DrawImGui(ProgramState *pState) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -418,31 +479,31 @@ void DrawImGui(ProgramState *programState) {
         ImGui::Begin("Hello window");
         //ImGui::Text("Hello text");
         ImGui::SliderFloat("Float slider", &f, 0.0, 1.0);
-        ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
-        ImGui::DragFloat3("Forest position", (float*)&programState->forestPosition);
-        ImGui::DragFloat("Forest scale", &programState->forestScale, 0.05, 0.1, 4.0);
+        ImGui::ColorEdit3("Background color", (float *) &pState->clearColor);
+        ImGui::DragFloat3("Forest position", (float*)&pState->forestPosition);
+        ImGui::DragFloat("Forest scale", &pState->forestScale, 0.05, 0.1, 4.0);
 
-        ImGui::DragFloat("pointLight.constant", &programState->pointLight.constant, 0.05, 0.0, 1.0);
-        ImGui::DragFloat("pointLight.linear", &programState->pointLight.linear, 0.05, 0.0, 1.0);
-        ImGui::DragFloat("pointLight.quadratic", &programState->pointLight.quadratic, 0.05, 0.0, 1.0);
+        ImGui::DragFloat("pointLight.constant", &pState->pointLight.constant, 0.05, 0.0, 1.0);
+        ImGui::DragFloat("pointLight.linear", &pState->pointLight.linear, 0.05, 0.0, 1.0);
+        ImGui::DragFloat("pointLight.quadratic", &pState->pointLight.quadratic, 0.05, 0.0, 1.0);
         ImGui::End();
     }
 
     {
         ImGui::Begin("Camera info");
-        const Camera& c = programState->camera;
+        const Camera& c = pState->camera;
         ImGui::Text("Camera position: (%f, %f, %f)", c.Position.x, c.Position.y, c.Position.z);
         ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
         ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
-        ImGui::Checkbox("Camera mouse update", &programState->CameraMouseMovementUpdateEnabled);
+        ImGui::Checkbox("Camera mouse update", &pState->CameraMouseMovementUpdateEnabled);
         ImGui::End();
     }
     {
         ImGui::Begin("Dirlight info");
-        ImGui::DragFloat3("Direction", (float*)&programState->dirLight.direction, 0.05, -10, 10);
-        ImGui::DragFloat3("Ambient", (float*)&programState->dirLight.ambient, 0.05, 0 ,1);
-        ImGui::DragFloat3("Diffuse", (float*)&programState->dirLight.diffuse, 0.05, 0 ,1);
-        ImGui::DragFloat3("Specular", (float*)&programState->dirLight.specular, 0.05, 0 ,1);
+        ImGui::DragFloat3("Direction", (float*)&pState->dirLight.direction, 0.05, -10, 10);
+        ImGui::DragFloat3("Ambient", (float*)&pState->dirLight.ambient, 0.05, 0 ,1);
+        ImGui::DragFloat3("Diffuse", (float*)&pState->dirLight.diffuse, 0.05, 0 ,1);
+        ImGui::DragFloat3("Specular", (float*)&pState->dirLight.specular, 0.05, 0 ,1);
         ImGui::End();
     }
 
@@ -462,7 +523,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
     }
 }
 
-unsigned int loadCubemap(vector<std::string>& faces){
+unsigned int loadRGBCubemap(vector<std::string>& faces){
 
     unsigned int skyboxID;
     glGenTextures(1, &skyboxID);
@@ -492,10 +553,39 @@ unsigned int loadCubemap(vector<std::string>& faces){
     return skyboxID;
 }
 
-void loadSkyboxVertices(std::string filename, float* vertices){
+unsigned int loadRGBACubemap(vector<std::string>& faces){
+
+    unsigned int skyboxID;
+    glGenTextures(1, &skyboxID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxID);
+
+    int width, height, nrChannels;
+    unsigned char *data;
+    for(unsigned int i = 0; i < faces.size(); i++) {
+
+        data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+        if(data) {
+            glTexImage2D(
+                    GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                    0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        }else{
+            std::cerr << "Failed to load cubemap face at path: " << faces[i] << '\n';
+        }
+        stbi_image_free(data);
+    }
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return skyboxID;
+}
+
+void loadSkyboxVertices(std::string filename, float* vertices, int n){
     std::ifstream in(filename);
-    char c;
-    for (int i = 0; in; i++) {
-        in >> vertices[i] >> c;
+    for (int i = 0; in && i < n; i++) {
+        in >> vertices[i];
     }
 }

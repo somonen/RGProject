@@ -8,4 +8,7 @@ uniform samplerCube skybox;
 void main()
 {
     FragColor = texture(skybox, TexCoords);
+    if(FragColor.a < 0.8){
+        discard;
+    }
 }
