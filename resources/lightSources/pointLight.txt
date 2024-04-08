@@ -1,7 +1,7 @@
 4.0 4.0 0.0 position
-3 3 3       ambient
+1 1 1       ambient
 1.6 1.6 1.6 diffuse
 1.0 1.0 1.0 specular
-0.5         constant
-0.5         linear
-0.5         quadratic
+0.0         constant
+0.6         linear
+0.9         quadratic

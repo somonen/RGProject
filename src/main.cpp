@@ -15,8 +15,11 @@
 #include <learnopengl/model.h>
 
 #include <iostream>
+#include <cstdlib>
 
 #define N_SKYBOX_VERTICES (108)
+#define N_FIREFLIES (10)
+
 
 float skyboxVertices[N_SKYBOX_VERTICES];
 float catTrumpetVertices[N_SKYBOX_VERTICES];
@@ -35,17 +38,38 @@ unsigned int loadRGBCubemap(vector<std::string>& faces);
 
 unsigned int loadRGBACubemap(vector<std::string>& faces);
 
-void loadSkyboxVertices(std::string filename, float* vertices, int n);
+void loadVertices(const std::string filename, float* vertices, int n);
+
+unsigned int loadRGBATexure(const std::string path);
+
+void loadGLMVertices(const std::string filename, glm::vec3 coords[], int n);
+
+float rectangleVertices[] = {
+    1.0f, -1.0f,  1.0f,
+    -1.0f, -1.0f,  0.0f,
+    -1.0f,  1.0f,  0.0f,
+
+    1.0f,  1.0f,  1.0f,
+    1.0f, -1.0f,  1.0f,
+    -1.0f,  1.0f,  0.0f
+    };
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 750;
+const int MAX_RAND = 200;
 
 // camera
 
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
+
+int timer=0;
+float x[N_FIREFLIES];
+float y[N_FIREFLIES];
+float yp = 0;
+float z[N_FIREFLIES];
 
 // timing
 float deltaTime = 0.0f;
@@ -62,6 +86,8 @@ struct PointLight {
     float quadratic;
 };
 
+PointLight pointLights[N_FIREFLIES];
+
 struct DirLight {
     glm::vec3 direction;
 
@@ -77,7 +103,6 @@ struct ProgramState {
     bool CameraMouseMovementUpdateEnabled = true;
     glm::vec3 forestPosition = glm::vec3(0.0f, -5.0f, 10.0f);
     float forestScale = 1.0f;
-    PointLight pointLight;
     DirLight dirLight;
 
     void LoadFromFile(std::string filename);
@@ -99,48 +124,9 @@ void ProgramState::LoadFromFile(std::string filename) {
     }
 }
 
-void loadPointLight(std::string filename, PointLight& light){
-    std::ifstream in(filename);
-    if (in){
-        float x, y, z;
-        std::string trash;
-        in >> x >> y >> z >> trash;
-        light.position = glm::vec3(x, y, z);
+void loadPointLight(std::string filename, PointLight& light);
 
-        in >> x >> y >> z >> trash;
-        light.ambient = glm::vec3(x, y, z);
-
-        in >> x >> y >> z >>trash;
-        light.diffuse = glm::vec3(x, y, z);
-
-        in >> x >> y >> z >> trash;
-        light.specular = glm::vec3(x, y, z);
-
-        in
-                >> light.constant >> trash
-                >> light.linear >> trash
-                >> light.quadratic >> trash;
-    }
-}
-
-void loadDirLight(std::string filename, DirLight& light){
-    std::ifstream in(filename);
-    if (in){
-        float x, y, z;
-        std::string trash;
-        in >> x >> y >> z >> trash;
-        light.direction = glm::vec3(x, y, z);
-
-        in >> x >> y >> z >> trash;
-        light.ambient = glm::vec3(x, y, z);
-
-        in >> x >> y >> z >> trash;
-        light.diffuse = glm::vec3(x, y, z);
-
-        in >> x >> y >> z >> trash;
-        light.specular = glm::vec3(x, y, z);
-    }
-}
+void loadDirLight(std::string filename, DirLight& light);
 
 ProgramState *programState;
 
@@ -203,12 +189,17 @@ int main() {
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
         glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
-    loadSkyboxVertices("resources/vertices/skybox_vertices.txt", skyboxVertices, N_SKYBOX_VERTICES);
-    loadSkyboxVertices("resources/vertices/cat_trumpet_vertices.txt", catTrumpetVertices, N_SKYBOX_VERTICES);
+    for(int i=0; i<N_FIREFLIES; i++){
+        x[i] = 0;
+        y[i] = 0;
+        z[i] = 0;
+    }
+
+    loadVertices("resources/vertices/skybox_vertices.txt", skyboxVertices, N_SKYBOX_VERTICES);
+    loadVertices("resources/vertices/cat_trumpet_vertices.txt", catTrumpetVertices, N_SKYBOX_VERTICES);
 
 /*
     FILE* f = fopen("resources/vertices/cat_trumpet_vertices.txt", "w");
@@ -284,13 +275,46 @@ int main() {
         catTrumpetTexture = loadRGBACubemap(faces);
     }
 
+    unsigned int cubeVAO, cubeVBO;
+    {
+        glGenVertexArrays(1, &cubeVAO);
+        glGenVertexArrays(1, &cubeVBO);
+        glGenBuffers(1, &cubeVBO);
+        glBindVertexArray(cubeVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *) nullptr);
+        glEnableVertexAttribArray(0);
+    }
+
+    unsigned int cubeTexture;
+    {
+        std::string texture = "resources/textures/blank.png";
+        cubeTexture = loadRGBATexure(texture);
+    }
+
+    glm::vec3 cubePositions[N_FIREFLIES];
+    loadGLMVertices("resources/vertices/firefliesPositions.txt", cubePositions, N_FIREFLIES);
+
     // load models
     Model forestModel("resources/objects/forest/forest.obj");
     forestModel.SetShaderTextureNamePrefix("material.");
 
+    //creating
+
     // pointLight
-    PointLight& pointLight = programState->pointLight;
-    loadPointLight("resources/lightSources/pointLight.txt", pointLight);
+    //PointLight pointLights[N_FIREFLIES];
+    loadPointLight("resources/lightSources/pointLight.txt", pointLights[0]);
+    pointLights[0].position = cubePositions[0];
+    for(int i=1; i<N_FIREFLIES; i++){
+        pointLights[i].position = cubePositions[i];
+        pointLights[i].ambient = pointLights[0].ambient;
+        pointLights[i].diffuse = pointLights[0].diffuse;
+        pointLights[i].specular = pointLights[0].specular;
+        pointLights[i].constant = pointLights[0].constant;
+        pointLights[i].linear = pointLights[0].linear;
+        pointLights[i].quadratic = pointLights[0].quadratic;
+    }
 
     // dirLight
     DirLight& dirLight = programState->dirLight;
@@ -330,6 +354,8 @@ int main() {
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
+
+
         // loading dirLight into shader
         {
             ourShader.setVec3("dirLight.direction", dirLight.direction);
@@ -338,17 +364,37 @@ int main() {
             ourShader.setVec3("dirLight.specular", dirLight.specular);
         }
 
-        // loading pointLight into shader
+        // loading pointLights into shader
         //pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
-        pointLight.position = glm::vec3(0.0f);
         {
-            ourShader.setVec3("pointLight.position", pointLight.position);
-            ourShader.setVec3("pointLight.ambient", pointLight.ambient);
-            ourShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-            ourShader.setVec3("pointLight.specular", pointLight.specular);
-            ourShader.setFloat("pointLight.constant", pointLight.constant);
-            ourShader.setFloat("pointLight.linear", pointLight.linear);
-            ourShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+            for(int i=0; i<N_FIREFLIES; i++) {
+
+                if(timer + 2 < (int)currentFrame) {
+                x[i] = ((rand() % MAX_RAND) - 100) * 1.0f / 10000.0f;
+                yp = ((rand() % MAX_RAND) - 100) * 1.0f / 10000.0f;
+                y[i] = yp*(yp + pointLights[i].position.y > -5.0f && yp + pointLights[i].position.y < 5.0f);
+                z[i] = ((rand() % MAX_RAND) - 100) * 1.0f / 10000.0f;
+                }
+
+                pointLights[i].position += glm::vec3(x[i], y[i], z[i]);
+                pointLights[i].position.y = min(5.0f, pointLights[i].position.y);
+                pointLights[i].position.y = max(-5.0f, pointLights[i].position.y);
+
+                ourShader.setVec3("pointLight[" + to_string(i) + "].position", pointLights[i].position);
+                ourShader.setVec3("pointLight[" + to_string(i) + "].ambient", pointLights[i].ambient);
+                ourShader.setVec3("pointLight[" + to_string(i) + "].diffuse", pointLights[i].diffuse);
+                ourShader.setVec3("pointLight[" + to_string(i) + "].specular", pointLights[i].specular);
+                ourShader.setFloat("pointLight[" + to_string(i) + "].constant", pointLights[i].constant);
+                ourShader.setFloat("pointLight[" + to_string(i) + "].linear", pointLights[i].linear);
+                ourShader.setFloat("pointLight[" + to_string(i) + "].quadratic", pointLights[i].quadratic);
+                cubePositions[i] = {
+                         pointLights[i].position.x,
+                         pointLights[i].position.y,
+                         pointLights[i].position.z
+                };
+            }
+            if(timer + 2 < (int)currentFrame)
+                timer += 3;
             ourShader.setVec3("viewPosition", programState->camera.Position);
         }
 
@@ -362,7 +408,23 @@ int main() {
         forestModel.Draw(ourShader);
         glEnable(GL_CULL_FACE);
 
+        // drawing fireflies
+        glCullFace(GL_FRONT);
+        glBindVertexArray(cubeVAO);
+
+        for(unsigned int i = 0; i < N_FIREFLIES; i++){
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, cubePositions[i]);
+            //float angle = 20.0f * i;
+            //model = glm::rotate(model, glm::radians(angle), glm::vec3(1.0f, 0.3f, 0.5f));
+            model = glm::scale(model, glm::vec3(0.05f));
+            ourShader.setMat4("model", model);
+            glBindTexture(GL_TEXTURE_2D, cubeTexture);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
         // drawing skybox
+        glCullFace(GL_BACK);
         glDepthMask(GL_FALSE);
         glDepthFunc(GL_LEQUAL);
         {
@@ -375,6 +437,7 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
+        //drawing cat skybox
         {
             catSkyboxShader.use();
             catSkyboxShader.setMat4("projection", projection);
@@ -482,10 +545,6 @@ void DrawImGui(ProgramState *pState) {
         ImGui::ColorEdit3("Background color", (float *) &pState->clearColor);
         ImGui::DragFloat3("Forest position", (float*)&pState->forestPosition);
         ImGui::DragFloat("Forest scale", &pState->forestScale, 0.05, 0.1, 4.0);
-
-        ImGui::DragFloat("pointLight.constant", &pState->pointLight.constant, 0.05, 0.0, 1.0);
-        ImGui::DragFloat("pointLight.linear", &pState->pointLight.linear, 0.05, 0.0, 1.0);
-        ImGui::DragFloat("pointLight.quadratic", &pState->pointLight.quadratic, 0.05, 0.0, 1.0);
         ImGui::End();
     }
 
@@ -501,9 +560,23 @@ void DrawImGui(ProgramState *pState) {
     {
         ImGui::Begin("Dirlight info");
         ImGui::DragFloat3("Direction", (float*)&pState->dirLight.direction, 0.05, -10, 10);
-        ImGui::DragFloat3("Ambient", (float*)&pState->dirLight.ambient, 0.05, 0 ,1);
-        ImGui::DragFloat3("Diffuse", (float*)&pState->dirLight.diffuse, 0.05, 0 ,1);
-        ImGui::DragFloat3("Specular", (float*)&pState->dirLight.specular, 0.05, 0 ,1);
+        ImGui::DragFloat3("Ambient", (float*)&pState->dirLight.ambient, 0.05, 0 ,5);
+        ImGui::DragFloat3("Diffuse", (float*)&pState->dirLight.diffuse, 0.05, 0 ,5);
+        ImGui::DragFloat3("Specular", (float*)&pState->dirLight.specular, 0.05, 0 ,5);
+        ImGui::End();
+    }
+    {
+        ImGui::Begin("PointLight info");
+        for(int i=0; i<N_FIREFLIES; i++) {
+            ImGui::Text(to_string(i).c_str());
+            ImGui::DragFloat3("Position", (float *) &pointLights[i].position, 0.05, -10, 10);
+            ImGui::DragFloat3("Ambient", (float *) &pointLights[i].ambient, 0.05, 0, 5);
+            ImGui::DragFloat3("Diffuse", (float *) &pointLights[i].diffuse, 0.05, 0, 5);
+            ImGui::DragFloat3("Specular", (float *) &pointLights[i].specular, 0.05, 0, 5);
+            ImGui::DragFloat("Constant", (float*)&pointLights[i].constant, 0.05, 0 ,5);
+            ImGui::DragFloat("Linear", (float*)&pointLights[i].linear, 0.05, 0 ,5);
+            ImGui::DragFloat("Quadratic", (float*)&pointLights[i].quadratic, 0.05, 0 ,5);
+        }
         ImGui::End();
     }
 
@@ -567,7 +640,7 @@ unsigned int loadRGBACubemap(vector<std::string>& faces){
         if(data) {
             glTexImage2D(
                     GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
-                    0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+                    0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         }else{
             std::cerr << "Failed to load cubemap face at path: " << faces[i] << '\n';
         }
@@ -583,9 +656,86 @@ unsigned int loadRGBACubemap(vector<std::string>& faces){
     return skyboxID;
 }
 
-void loadSkyboxVertices(std::string filename, float* vertices, int n){
+void loadPointLight(std::string filename, PointLight& light){
+    std::ifstream in(filename);
+    if(in) {
+        float x, y, z;
+        std::string trash;
+        in >> x >> y >> z >> trash;
+        light.position = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.ambient = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.diffuse = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.specular = glm::vec3(x, y, z);
+
+        in
+                >> light.constant >> trash
+                >> light.linear >> trash
+                >> light.quadratic >> trash;
+    }else{
+        std::cout << "Failed to load file at path: " << filename << " \n";
+    }
+}
+
+void loadDirLight(std::string filename, DirLight& light){
+    std::ifstream in(filename);
+    if (in){
+        float x, y, z;
+        std::string trash;
+        in >> x >> y >> z >> trash;
+        light.direction = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.ambient = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.diffuse = glm::vec3(x, y, z);
+
+        in >> x >> y >> z >> trash;
+        light.specular = glm::vec3(x, y, z);
+    }
+}
+
+void loadVertices(const std::string filename, float* vertices, int n){
     std::ifstream in(filename);
     for (int i = 0; in && i < n; i++) {
         in >> vertices[i];
     }
+}
+
+void loadGLMVertices(const std::string filename, glm::vec3 coords[], int n){
+    std::ifstream in(filename);
+    for (int i = 0; in && i < n; i++) {
+        float x, y, z;
+        in >> x >> y >> z;
+        coords[i] = {x, y, z};
+    }
+}
+
+unsigned int loadRGBATexure(const std::string path){
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+    int width, height, nrChannels;
+    unsigned char *data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+    if(data) {
+        glTexImage2D(GL_TEXTURE_2D,0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    }else{
+        std::cerr << "Failed to load cubemap face at path: " << path << '\n';
+    }
+    stbi_image_free(data);
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return textureID;
 }
