@@ -1,4 +1,4 @@
 1.0 -10.0 1.0 direction
 0.3 0.3 0.3 ambient
-0.6 0.6 0.6 diffuse
+1.0 1.0 1.0 diffuse
 0.2 0.2 0.2 specular

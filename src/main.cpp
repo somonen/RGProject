@@ -20,9 +20,11 @@
 #define N_SKYBOX_VERTICES (108)
 #define N_FIREFLIES (10)
 
-
 float skyboxVertices[N_SKYBOX_VERTICES];
 float catTrumpetVertices[N_SKYBOX_VERTICES];
+
+float Gamma = 1.0f;
+float exposure = 1.0f;
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 
@@ -38,21 +40,23 @@ unsigned int loadRGBCubemap(vector<std::string>& faces);
 
 unsigned int loadRGBACubemap(vector<std::string>& faces);
 
-void loadVertices(const std::string filename, float* vertices, int n);
+void loadVertices(const std::string& filename, float* vertices, int n);
 
-unsigned int loadRGBATexure(const std::string path);
+unsigned int loadRGBATexture(const std::string& path);
 
-void loadGLMVertices(const std::string filename, glm::vec3 coords[], int n);
+void loadGLMVertices(const std::string& filename, glm::vec3 coords[], int n);
 
-float rectangleVertices[] = {
-    1.0f, -1.0f,  1.0f,
-    -1.0f, -1.0f,  0.0f,
-    -1.0f,  1.0f,  0.0f,
+float rectangleVertices[] =
+        {
+                // Coords    // texCoords
+                1.0f, -1.0f,  1.0f, 0.0f,
+                -1.0f, -1.0f,  0.0f, 0.0f,
+                -1.0f,  1.0f,  0.0f, 1.0f,
 
-    1.0f,  1.0f,  1.0f,
-    1.0f, -1.0f,  1.0f,
-    -1.0f,  1.0f,  0.0f
-    };
+                1.0f,  1.0f,  1.0f, 1.0f,
+                1.0f, -1.0f,  1.0f, 0.0f,
+                -1.0f,  1.0f,  0.0f, 1.0f
+        };
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
@@ -66,10 +70,10 @@ float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
 
 int timer=0;
-float x[N_FIREFLIES];
-float y[N_FIREFLIES];
+float xs[N_FIREFLIES];
+float ys[N_FIREFLIES];
 float yp = 0;
-float z[N_FIREFLIES];
+float zs[N_FIREFLIES];
 
 // timing
 float deltaTime = 0.0f;
@@ -124,9 +128,9 @@ void ProgramState::LoadFromFile(std::string filename) {
     }
 }
 
-void loadPointLight(std::string filename, PointLight& light);
+void loadPointLight(const std::string& filename, PointLight& light);
 
-void loadDirLight(std::string filename, DirLight& light);
+void loadDirLight(const std::string& filename, DirLight& light);
 
 ProgramState *programState;
 
@@ -193,9 +197,9 @@ int main() {
     }
 
     for(int i=0; i<N_FIREFLIES; i++){
-        x[i] = 0;
-        y[i] = 0;
-        z[i] = 0;
+        xs[i] = 0;
+        ys[i] = 0;
+        zs[i] = 0;
     }
 
     loadVertices("resources/vertices/skybox_vertices.txt", skyboxVertices, N_SKYBOX_VERTICES);
@@ -222,6 +226,8 @@ int main() {
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader catSkyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+    Shader framebufferShader("resources/shaders/framebuffer.vs", "resources/shaders/framebuffer.fs");
+
 
     // skybox vertex initialization
     unsigned int skyboxVAO, skyboxVBO;
@@ -290,7 +296,7 @@ int main() {
     unsigned int cubeTexture;
     {
         std::string texture = "resources/textures/blank.png";
-        cubeTexture = loadRGBATexure(texture);
+        cubeTexture = loadRGBATexture(texture);
     }
 
     glm::vec3 cubePositions[N_FIREFLIES];
@@ -320,14 +326,58 @@ int main() {
     DirLight& dirLight = programState->dirLight;
     loadDirLight("resources/lightSources/dirLight.txt", dirLight);
 
+    ourShader.use();
+    ourShader.setFloat("material.shininess", 128.0f);
+    ourShader.setInt("nPointLights", N_FIREFLIES);
+
     skyboxShader.use();
     skyboxShader.setInt("skybox", 0);
 
     catSkyboxShader.use();
     skyboxShader.setInt("skybox", 0);
 
-    ourShader.use();
-    ourShader.setFloat("material.shininess", 128.0f);
+    framebufferShader.use();
+    framebufferShader.setInt("texture1", 0);
+
+    // Prepare framebuffer rectangle VBO and VAO
+    unsigned int rectVAO, rectVBO;
+    glGenVertexArrays(1, &rectVAO);
+    glGenBuffers(1, &rectVBO);
+    glBindVertexArray(rectVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, rectVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(rectangleVertices), &rectangleVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+
+    unsigned int FBO;
+    glGenFramebuffers(1, &FBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+
+    // Create Framebuffer Texture
+    unsigned int framebufferTexture;
+    glGenTextures(1, &framebufferTexture);
+    glBindTexture(GL_TEXTURE_2D, framebufferTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // Prevents edge bleeding
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // Prevents edge bleeding
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTexture, 0);
+
+    // Create Render Buffer Object
+    unsigned int RBO;
+    glGenRenderbuffers(1, &RBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, RBO);
+
+    // Error checking framebuffer
+    auto fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (fboStatus != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer error: " << fboStatus << std::endl;
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -340,21 +390,27 @@ int main() {
         // input
         processInput(window);
 
+        // Bind the custom framebuffer
+        glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+
         // render
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glEnable(GL_DEPTH_TEST);
 
         // don't forget to enable shader before setting uniforms
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = programState->camera.GetViewMatrix();
+        glm::mat4 model = glm::mat4(1.0f);
 
         ourShader.use();
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
-
-
+        ourShader.setFloat("gamma", Gamma);
+        ourShader.setFloat("exposure", exposure);
 
         // loading dirLight into shader
         {
@@ -370,13 +426,13 @@ int main() {
             for(int i=0; i<N_FIREFLIES; i++) {
 
                 if(timer + 2 < (int)currentFrame) {
-                x[i] = ((rand() % MAX_RAND) - 100) * 1.0f / 10000.0f;
+                xs[i] = ((rand() % MAX_RAND) - 100) * 1.0f / 10000.0f;
                 yp = ((rand() % MAX_RAND) - 100) * 1.0f / 10000.0f;
-                y[i] = yp*(yp + pointLights[i].position.y > -5.0f && yp + pointLights[i].position.y < 5.0f);
-                z[i] = ((rand() % MAX_RAND) - 100) * 1.0f / 10000.0f;
+                ys[i] = yp*(yp + pointLights[i].position.y > -5.0f && yp + pointLights[i].position.y < 5.0f);
+                zs[i] = ((rand() % MAX_RAND) - 100) * 1.0f / 10000.0f;
                 }
 
-                pointLights[i].position += glm::vec3(x[i], y[i], z[i]);
+                pointLights[i].position += glm::vec3(xs[i], ys[i], zs[i]);
                 pointLights[i].position.y = min(5.0f, pointLights[i].position.y);
                 pointLights[i].position.y = max(-5.0f, pointLights[i].position.y);
 
@@ -399,7 +455,7 @@ int main() {
         }
 
         // render the loaded model
-        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::mat4(1.0f);
         model = glm::translate(model,programState->forestPosition); // translate it down so it's at the center of the scene
         model = glm::scale(model, glm::vec3(programState->forestScale));    // it's a bit too big for our scene, so scale it down
         ourShader.setMat4("model", model);
@@ -450,6 +506,17 @@ int main() {
 
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS);
+
+        // Bind the default framebuffer
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        framebufferShader.use();
+        glBindVertexArray(rectVAO);
+        glDisable(GL_DEPTH_TEST); // prevents framebuffer rectangle from being discarded
+        glDisable(GL_CULL_FACE);
+        glBindTexture(GL_TEXTURE_2D, framebufferTexture);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -538,13 +605,13 @@ void DrawImGui(ProgramState *pState) {
     ImGui::NewFrame();
 
     {
-        static float f = 0.0f;
         ImGui::Begin("Hello window");
         //ImGui::Text("Hello text");
-        ImGui::SliderFloat("Float slider", &f, 0.0, 1.0);
         ImGui::ColorEdit3("Background color", (float *) &pState->clearColor);
         ImGui::DragFloat3("Forest position", (float*)&pState->forestPosition);
         ImGui::DragFloat("Forest scale", &pState->forestScale, 0.05, 0.1, 4.0);
+        ImGui::DragFloat("Gamma", &Gamma, 0.05, 0.1, 4.0);
+        ImGui::DragFloat("Exposure", &exposure, 0.05, 0.1, 4.0);
         ImGui::End();
     }
 
@@ -656,7 +723,7 @@ unsigned int loadRGBACubemap(vector<std::string>& faces){
     return skyboxID;
 }
 
-void loadPointLight(std::string filename, PointLight& light){
+void loadPointLight(const std::string& filename, PointLight& light){
     std::ifstream in(filename);
     if(in) {
         float x, y, z;
@@ -682,7 +749,7 @@ void loadPointLight(std::string filename, PointLight& light){
     }
 }
 
-void loadDirLight(std::string filename, DirLight& light){
+void loadDirLight(const std::string& filename, DirLight& light){
     std::ifstream in(filename);
     if (in){
         float x, y, z;
@@ -701,14 +768,14 @@ void loadDirLight(std::string filename, DirLight& light){
     }
 }
 
-void loadVertices(const std::string filename, float* vertices, int n){
+void loadVertices(const std::string& filename, float* vertices, int n){
     std::ifstream in(filename);
     for (int i = 0; in && i < n; i++) {
         in >> vertices[i];
     }
 }
 
-void loadGLMVertices(const std::string filename, glm::vec3 coords[], int n){
+void loadGLMVertices(const std::string& filename, glm::vec3 coords[], int n){
     std::ifstream in(filename);
     for (int i = 0; in && i < n; i++) {
         float x, y, z;
@@ -717,7 +784,7 @@ void loadGLMVertices(const std::string filename, glm::vec3 coords[], int n){
     }
 }
 
-unsigned int loadRGBATexure(const std::string path){
+unsigned int loadRGBATexture(const std::string& path){
     unsigned int textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);

@@ -31,11 +31,11 @@ in vec2 TexCoords;
 in vec3 Normal;
 in vec3 FragPos;
 
-#define NR_POINT_LIGHTS 10
-
-uniform PointLight pointLight[NR_POINT_LIGHTS];
+#define MAX_N_POINT_LIGHTS 100
 uniform Material material;
 uniform DirLight dirLight;
+uniform int nPointLights;
+uniform PointLight pointLight[MAX_N_POINT_LIGHTS];
 
 uniform vec3 viewPosition;
 // calculates the color when using a point light.
@@ -87,7 +87,7 @@ void main()
     vec3 result = vec3(0.0);
     result += CalcDirLight(dirLight, normal, viewDir);
 
-    for(int i=0; i < NR_POINT_LIGHTS; i++){
+    for(int i=0; i < nPointLights && i < MAX_N_POINT_LIGHTS; i++){
         result += CalcPointLight(pointLight[i], normal, FragPos, viewDir);
     }
     FragColor = vec4(result, 1.0);
