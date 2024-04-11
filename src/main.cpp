@@ -25,6 +25,7 @@ float catTrumpetVertices[N_SKYBOX_VERTICES];
 
 float Gamma = 1.0f;
 float exposure = 1.0f;
+bool hdr = false;
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 
@@ -226,7 +227,7 @@ int main() {
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader catSkyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
-    Shader framebufferShader("resources/shaders/framebuffer.vs", "resources/shaders/framebuffer.fs");
+    Shader hdrShader("resources/shaders/hdr.vs", "resources/shaders/hdr.fs");
 
 
     // skybox vertex initialization
@@ -336,8 +337,9 @@ int main() {
     catSkyboxShader.use();
     skyboxShader.setInt("skybox", 0);
 
-    framebufferShader.use();
-    framebufferShader.setInt("texture1", 0);
+    hdrShader.use();
+    hdrShader.setInt("hdrBuffer", 0);
+    hdrShader.setBool("hdr", hdr);
 
     // Prepare framebuffer rectangle VBO and VAO
     unsigned int rectVAO, rectVBO;
@@ -351,33 +353,28 @@ int main() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
+    unsigned int hdrFBO;
+    glGenFramebuffers(1, &hdrFBO);
+    // create floating point color buffer
+    unsigned int colorBuffer;
+    glGenTextures(1, &colorBuffer);
+    glBindTexture(GL_TEXTURE_2D, colorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // create depth buffer (renderbuffer)
+    unsigned int rboDepth;
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
+    // attach buffers
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorBuffer, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    unsigned int FBO;
-    glGenFramebuffers(1, &FBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-
-    // Create Framebuffer Texture
-    unsigned int framebufferTexture;
-    glGenTextures(1, &framebufferTexture);
-    glBindTexture(GL_TEXTURE_2D, framebufferTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // Prevents edge bleeding
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // Prevents edge bleeding
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTexture, 0);
-
-    // Create Render Buffer Object
-    unsigned int RBO;
-    glGenRenderbuffers(1, &RBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, RBO);
-
-    // Error checking framebuffer
-    auto fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    if (fboStatus != GL_FRAMEBUFFER_COMPLETE)
-        std::cout << "Framebuffer error: " << fboStatus << std::endl;
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -391,7 +388,7 @@ int main() {
         processInput(window);
 
         // Bind the custom framebuffer
-        glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
 
         // render
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
@@ -409,8 +406,6 @@ int main() {
         ourShader.use();
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
-        ourShader.setFloat("gamma", Gamma);
-        ourShader.setFloat("exposure", exposure);
 
         // loading dirLight into shader
         {
@@ -449,8 +444,14 @@ int main() {
                          pointLights[i].position.z
                 };
             }
-            if(timer + 2 < (int)currentFrame)
+            if(timer + 2 < (int)currentFrame) {
                 timer += 3;
+                hdr = !hdr;
+                hdrShader.use();
+                hdrShader.setBool("hdr", hdr);
+                std::cout << "hdr: " << hdr << '\n';
+            }
+            ourShader.use();
             ourShader.setVec3("viewPosition", programState->camera.Position);
         }
 
@@ -510,13 +511,18 @@ int main() {
         // Bind the default framebuffer
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        framebufferShader.use();
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        hdrShader.use();
+        hdrShader.setFloat("exposure", exposure);
+        hdrShader.setFloat("gamma", Gamma);
         glBindVertexArray(rectVAO);
         glDisable(GL_DEPTH_TEST); // prevents framebuffer rectangle from being discarded
         glDisable(GL_CULL_FACE);
-        glBindTexture(GL_TEXTURE_2D, framebufferTexture);
+        glBindTexture(GL_TEXTURE_2D, colorBuffer);
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -792,7 +798,7 @@ unsigned int loadRGBATexture(const std::string& path){
     int width, height, nrChannels;
     unsigned char *data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
     if(data) {
-        glTexImage2D(GL_TEXTURE_2D,0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        glTexImage2D(GL_TEXTURE_2D,0, GL_SRGB_ALPHA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     }else{
         std::cerr << "Failed to load cubemap face at path: " << path << '\n';
     }
