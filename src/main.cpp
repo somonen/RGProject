@@ -19,7 +19,7 @@
 
 #include "vertices.h"
 
-#define N_FIREFLIES (200)
+#define N_FIREFLIES (196)
 #define Y_LIMIT (5)
 
 float Gamma = 1.0f;
