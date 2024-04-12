@@ -251,14 +251,14 @@ int main() {
     {
         vector<std::string> faces
                 {
-                        "resources/textures/skybox/skybox_px.jpg",
-                        "resources/textures/skybox/skybox_nx.jpg",
-                        "resources/textures/skybox/skybox_py.jpg",
-                        "resources/textures/skybox/skybox_ny.jpg",
-                        "resources/textures/skybox/skybox_pz.jpg",
-                        "resources/textures/skybox/skybox_nz.jpg"
+                        "resources/textures/skybox/left.png",
+                        "resources/textures/skybox/right.png",
+                        "resources/textures/skybox/top.png",
+                        "resources/textures/skybox/bottom.png",
+                        "resources/textures/skybox/back.png",
+                        "resources/textures/skybox/front.png"
                 };
-        skyboxTexture = loadRGBCubemap(faces);
+        skyboxTexture = loadRGBACubemap(faces);
     }
 
     unsigned int catTrumpetVAO, catTrumpetVBO;
@@ -286,17 +286,6 @@ int main() {
         catTrumpetTexture = loadRGBACubemap(faces);
     }
 
-    unsigned int cubeVAO, cubeVBO;
-    {
-        glGenVertexArrays(1, &cubeVAO);
-        glGenVertexArrays(1, &cubeVBO);
-        glGenBuffers(1, &cubeVBO);
-        glBindVertexArray(cubeVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *) nullptr);
-        glEnableVertexAttribArray(0);
-    }
 
     unsigned int cubeTexture;
     {
@@ -335,7 +324,7 @@ int main() {
     ourShader.setFloat("material.shininess", 128.0f);
     ourShader.setInt("nPointLights", N_FIREFLIES);
     
-    
+
     skyboxShader.use();
     skyboxShader.setInt("skybox", 0);
 
@@ -348,18 +337,6 @@ int main() {
     bloomFinalShader.use();
     bloomFinalShader.setInt("scene", 0);
     bloomFinalShader.setInt("bloomBlur", 1);
-
-    // Prepare framebuffer rectangle VBO and VAO
-    unsigned int rectVAO, rectVBO;
-    glGenVertexArrays(1, &rectVAO);
-    glGenBuffers(1, &rectVBO);
-    glBindVertexArray(rectVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, rectVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(rectangleVertices), &rectangleVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
     // configure (floating point) framebuffers
     // ---------------------------------------
@@ -500,10 +477,6 @@ int main() {
         forestModel.Draw(ourShader);
         glEnable(GL_CULL_FACE);
 
-        // drawing fireflies
-        glCullFace(GL_FRONT);
-        glBindVertexArray(cubeVAO);
-
 
         // drawing skybox
         glCullFace(GL_BACK);
@@ -552,7 +525,6 @@ int main() {
 
         // Bind the default framebuffer
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
 
         // 2. blur bright fragments with two-pass Gaussian Blur
         // --------------------------------------------------
@@ -611,8 +583,6 @@ int main() {
         glDeleteBuffers(1, &skyboxVBO);
         glDeleteVertexArrays(1, &catTrumpetVAO);
         glDeleteBuffers(1, &catTrumpetVBO);
-        glDeleteVertexArrays(1, &cubeVAO);
-        glDeleteBuffers(1, &cubeVBO);
         // glfw: terminate, clearing all previously allocated GLFW resources.
         glfwTerminate();
     }
