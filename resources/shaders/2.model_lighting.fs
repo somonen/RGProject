@@ -32,7 +32,7 @@ in vec2 TexCoords;
 in vec3 Normal;
 in vec3 FragPos;
 
-#define MAX_N_POINT_LIGHTS 100
+#define MAX_N_POINT_LIGHTS 512
 uniform Material material;
 uniform DirLight dirLight;
 uniform int nPointLights;
